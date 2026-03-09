@@ -17,6 +17,13 @@ class CallLog(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        'tenants.Tenant',
+        on_delete=models.CASCADE,
+        related_name='call_logs',
+        null=True,  # Allow null for migration, will be required later
+        blank=True,
+    )
     call_sid = models.CharField(max_length=64, unique=True, db_index=True)
     from_number = models.CharField(max_length=20, db_index=True)
     to_number = models.CharField(max_length=20)

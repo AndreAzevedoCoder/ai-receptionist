@@ -11,6 +11,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
 
     # API routes
+    path('api/auth/', include('backend.features.auth.urls')),
+    path('api/tenants/', include('backend.features.tenants.urls')),
+    path('api/billing/', include('backend.features.billing.urls')),
     path('api/twilio/', include('backend.features.twilio.urls')),
     path('api/vapi/', include('backend.features.vapi.urls')),
     path('api/leads/', include('backend.features.leads.urls')),

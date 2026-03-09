@@ -3,14 +3,20 @@ import logging
 from django.http import HttpResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework import status
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from backend.features.calls.models import CallLog
+from backend.features.tenants.models import Tenant
 from .authentication import TwilioWebhookAuthentication
 from .services import TwilioService
 
 logger = logging.getLogger(__name__)
+
+# Statuses that should forward to Vapi (DND fix)
+FORWARD_TO_VAPI_STATUSES = ['no-answer', 'busy', 'failed', 'canceled']
 
 
 class TwilioWebhookMixin:
@@ -22,6 +28,10 @@ class TwilioWebhookMixin:
         """Return a TwiML response."""
         return HttpResponse(twiml, content_type='application/xml')
 
+    def get_tenant_by_phone(self, phone_number: str) -> Tenant:
+        """Look up tenant by Twilio phone number."""
+        return Tenant.objects.get(twilio_phone_number=phone_number, status='active')
+
 
 class IncomingCallView(TwilioWebhookMixin, APIView):
     """
@@ -29,8 +39,9 @@ class IncomingCallView(TwilioWebhookMixin, APIView):
 
     POST /api/twilio/incoming/
 
-    Attempts to forward the call to the primary number with a 6-second timeout.
-    If the call is not answered, it will be forwarded to Vapi.ai.
+    Looks up the tenant by the called number, then attempts to forward
+    the call to their configured forward number with their configured timeout.
+    If not answered, forwards to their Vapi AI assistant.
     """
 
     @csrf_exempt
@@ -41,16 +52,26 @@ class IncomingCallView(TwilioWebhookMixin, APIView):
 
         logger.info(f"Incoming call: {call_sid} from {from_number} to {to_number}")
 
-        # Log the incoming call
+        # Look up tenant by the called number
+        try:
+            tenant = self.get_tenant_by_phone(to_number)
+        except Tenant.DoesNotExist:
+            logger.error(f"No active tenant found for phone number: {to_number}")
+            # Return a message and hang up
+            service = TwilioService()
+            twiml = service.generate_error_twiml("Sorry, this number is not configured.")
+            return self.twiml_response(twiml)
+
+        # Log the incoming call with tenant
         CallLog.objects.create(
+            tenant=tenant,
             call_sid=call_sid,
             from_number=from_number,
             to_number=to_number,
             status='incoming',
         )
 
-        # Generate TwiML to dial the primary number
-        service = TwilioService()
+        # Build action URL
         action_url = request.build_absolute_uri(reverse('twilio_dial_result'))
 
         # Fix protocol if behind reverse proxy
@@ -58,10 +79,16 @@ class IncomingCallView(TwilioWebhookMixin, APIView):
         if forwarded_proto == 'https' and action_url.startswith('http://'):
             action_url = 'https://' + action_url[7:]
 
-        logger.info(f"Action URL for dial result: {action_url}")
-        twiml = service.generate_incoming_call_twiml(action_url=action_url, timeout=6)
-        logger.info(f"TwiML response: {twiml}")
+        # Generate TwiML using tenant's configuration
+        service = TwilioService()
+        twiml = service.generate_incoming_call_twiml(
+            forward_number=tenant.forward_phone_number,
+            timeout=tenant.timeout_seconds,
+            action_url=action_url,
+            caller_id=tenant.twilio_phone_number,
+        )
 
+        logger.info(f"Forwarding to {tenant.forward_phone_number} with {tenant.timeout_seconds}s timeout")
         return self.twiml_response(twiml)
 
 
@@ -71,22 +98,33 @@ class DialResultView(TwilioWebhookMixin, APIView):
 
     POST /api/twilio/dial-result/
 
-    If the call was not completed (no answer, busy, failed),
+    If the call was not completed (no answer, busy, failed, canceled),
     forward to Vapi.ai for AI handling.
+
+    DND Fix: Now forwards on ANY non-completed status, including:
+    - no-answer: Phone rang but wasn't answered
+    - busy: Phone was busy or DND
+    - failed: Call failed for any reason
+    - canceled: Call was canceled
     """
 
     @csrf_exempt
     def post(self, request):
         call_sid = request.POST.get('CallSid', '')
         dial_call_status = request.POST.get('DialCallStatus', '')
-        from_number = request.POST.get('From', '')
+        to_number = request.POST.get('To', '')
 
         logger.info(f"Dial result for {call_sid}: {dial_call_status}")
-        logger.info(f"All POST params: {dict(request.POST)}")
+
+        # Look up tenant and call log
+        try:
+            tenant = self.get_tenant_by_phone(to_number)
+        except Tenant.DoesNotExist:
+            logger.error(f"No tenant found for {to_number}")
+            return self.twiml_response('<Response><Hangup/></Response>')
 
         service = TwilioService()
 
-        # Update call log
         try:
             call_log = CallLog.objects.get(call_sid=call_sid)
 
@@ -95,19 +133,35 @@ class DialResultView(TwilioWebhookMixin, APIView):
                 call_log.status = 'completed'
                 call_log.save()
                 twiml = service.generate_hangup_twiml()
-            else:
-                # Call was not answered - forward to Vapi
+            elif dial_call_status in FORWARD_TO_VAPI_STATUSES:
+                # Forward to Vapi for ANY non-completed status (DND fix)
                 call_log.status = 'vapi'
                 call_log.save()
-                logger.info(f"Forwarding call {call_sid} to Vapi.ai phone: {service.vapi_phone_number}")
-                # Use Twilio number as caller ID (required by Twilio for outbound)
-                twiml = service.generate_vapi_forward_twiml()
-                logger.info(f"Vapi forward TwiML: {twiml}")
+
+                logger.info(
+                    f"Forwarding call {call_sid} to Vapi ({dial_call_status}): "
+                    f"{tenant.vapi_phone_number}"
+                )
+                twiml = service.generate_vapi_forward_twiml(
+                    vapi_phone_number=tenant.vapi_phone_number,
+                    caller_id=tenant.twilio_phone_number,
+                )
+            else:
+                # Unknown status, forward to Vapi anyway
+                logger.warning(f"Unknown dial status {dial_call_status}, forwarding to Vapi")
+                call_log.status = 'vapi'
+                call_log.save()
+                twiml = service.generate_vapi_forward_twiml(
+                    vapi_phone_number=tenant.vapi_phone_number,
+                    caller_id=tenant.twilio_phone_number,
+                )
 
         except CallLog.DoesNotExist:
-            logger.warning(f"Call log not found for {call_sid}")
-            # Forward to Vapi anyway
-            twiml = service.generate_vapi_forward_twiml()
+            logger.warning(f"Call log not found for {call_sid}, forwarding to Vapi")
+            twiml = service.generate_vapi_forward_twiml(
+                vapi_phone_number=tenant.vapi_phone_number,
+                caller_id=tenant.twilio_phone_number,
+            )
 
         return self.twiml_response(twiml)
 
@@ -142,7 +196,9 @@ class CallStatusView(TwilioWebhookMixin, APIView):
                 'canceled': 'failed',
             }
             if call_status in status_mapping:
-                call_log.status = status_mapping[call_status]
+                # Only update if not already forwarded to vapi
+                if call_log.status != 'vapi':
+                    call_log.status = status_mapping[call_status]
 
             call_log.save()
             logger.info(f"Updated call log {call_sid}: status={call_log.status}, duration={call_log.duration}")
@@ -150,5 +206,4 @@ class CallStatusView(TwilioWebhookMixin, APIView):
         except CallLog.DoesNotExist:
             logger.warning(f"Call log not found for status update: {call_sid}")
 
-        # Return empty TwiML
         return self.twiml_response('<Response></Response>')

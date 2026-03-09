@@ -13,6 +13,13 @@ class Lead(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        'tenants.Tenant',
+        on_delete=models.CASCADE,
+        related_name='leads',
+        null=True,  # Allow null for migration, will be required later
+        blank=True,
+    )
     name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=20, db_index=True)
     email = models.EmailField(blank=True, default='')

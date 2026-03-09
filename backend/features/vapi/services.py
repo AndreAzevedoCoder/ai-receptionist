@@ -149,3 +149,17 @@ class VapiService:
         """
         customer = payload.get('customer', {})
         return customer.get('number', '')
+
+    def get_vapi_phone_number(self, payload: dict) -> str:
+        """
+        Extract the Vapi phone number that received the call.
+
+        Args:
+            payload: The webhook payload
+
+        Returns:
+            Vapi phone number or empty string
+        """
+        # The phoneNumber field contains the Vapi phone number details
+        phone_number_data = payload.get('phoneNumber', {})
+        return phone_number_data.get('number', '')

@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from backend.features.calls.models import CallLog
 from backend.features.calendar.services import GoogleCalendarService
 from backend.features.leads.models import Lead
+from backend.features.tenants.models import Tenant
 from .authentication import VapiWebhookAuthentication
 from .services import VapiService
 
@@ -41,6 +42,17 @@ class EndOfCallWebhookView(APIView):
 
         vapi_service = VapiService()
 
+        # Look up tenant by the Vapi phone number that received the call
+        vapi_phone = vapi_service.get_vapi_phone_number(payload)
+        tenant = None
+
+        if vapi_phone:
+            try:
+                tenant = Tenant.objects.get(vapi_phone_number=vapi_phone, status='active')
+                logger.info(f"Found tenant {tenant.id} for Vapi phone {vapi_phone}")
+            except Tenant.DoesNotExist:
+                logger.warning(f"No active tenant found for Vapi phone: {vapi_phone}")
+
         # Extract lead data
         lead_data = vapi_service.extract_lead_data(payload)
         phone_number = vapi_service.get_caller_phone_number(payload)
@@ -52,16 +64,26 @@ class EndOfCallWebhookView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Create or update lead
+        # Create or update lead (scoped to tenant if found)
         if phone_number:
+            # Build defaults for lead creation
+            lead_defaults = {
+                'name': lead_data.get('name', 'Unknown') if lead_data else 'Unknown',
+                'email': lead_data.get('email', '') if lead_data else '',
+                'notes': lead_data.get('notes', '') if lead_data else '',
+                'source': 'vapi_ai',
+            }
+            if tenant:
+                lead_defaults['tenant'] = tenant
+
+            # Try to find existing lead for this tenant + phone
+            lead_filter = {'phone_number': phone_number}
+            if tenant:
+                lead_filter['tenant'] = tenant
+
             lead, created = Lead.objects.get_or_create(
-                phone_number=phone_number,
-                defaults={
-                    'name': lead_data.get('name', 'Unknown') if lead_data else 'Unknown',
-                    'email': lead_data.get('email', '') if lead_data else '',
-                    'notes': lead_data.get('notes', '') if lead_data else '',
-                    'source': 'vapi_ai',
-                },
+                **lead_filter,
+                defaults=lead_defaults,
             )
 
             if not created and lead_data:
@@ -76,11 +98,17 @@ class EndOfCallWebhookView(APIView):
 
             logger.info(f"{'Created' if created else 'Updated'} lead {lead.id} for {phone_number}")
 
-            # Link to call log if exists
+            # Link to call log if exists (scoped by tenant if available)
             try:
+                call_log_filter = {
+                    'from_number': phone_number,
+                    'status': 'vapi',
+                }
+                if tenant:
+                    call_log_filter['tenant'] = tenant
+
                 call_log = CallLog.objects.filter(
-                    from_number=phone_number,
-                    status='vapi',
+                    **call_log_filter
                 ).order_by('-created_at').first()
 
                 if call_log:

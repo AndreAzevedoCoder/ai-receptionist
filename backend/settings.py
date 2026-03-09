@@ -45,8 +45,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Third party
     'rest_framework',
+    'rest_framework_simplejwt',
     'corsheaders',
     # Feature apps
+    'backend.features.tenants',
+    'backend.features.billing',
     'backend.features.leads',
     'backend.features.calls',
     'backend.features.calendar',
@@ -168,8 +171,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Django REST Framework
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -179,6 +185,18 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.FormParser',
         'rest_framework.parsers.MultiPartParser',
     ],
+}
+
+# Simple JWT Settings
+from datetime import timedelta
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 
@@ -197,8 +215,23 @@ TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER', '')
 FORWARD_PHONE_NUMBER = os.getenv('FORWARD_PHONE_NUMBER', '')
 
 # Vapi.ai Settings
+VAPI_API_KEY = os.getenv('VAPI_API_KEY', '')
 VAPI_ASSISTANT_PHONE_NUMBER = os.getenv('VAPI_ASSISTANT_PHONE_NUMBER', '')
 VAPI_WEBHOOK_SECRET = os.getenv('VAPI_WEBHOOK_SECRET', '')
+VAPI_DEFAULT_SYSTEM_PROMPT = os.getenv(
+    'VAPI_DEFAULT_SYSTEM_PROMPT',
+    'You are a helpful AI receptionist. Greet the caller, ask how you can help, '
+    'and collect their name and reason for calling. Be friendly and professional.'
+)
+
+# Stripe Settings
+STRIPE_SECRET_KEY = os.getenv('STRIPE_SECRET_KEY', '')
+STRIPE_WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
+STRIPE_PRICE_ID_BASIC = os.getenv('STRIPE_PRICE_ID_BASIC', '')
+STRIPE_PRICE_ID_PRO = os.getenv('STRIPE_PRICE_ID_PRO', '')
+
+# Webhook Base URL (for configuring Twilio webhooks)
+BASE_WEBHOOK_URL = os.getenv('BASE_WEBHOOK_URL', 'http://localhost:8000')
 
 # Google Calendar Settings
 GOOGLE_CALENDAR_CREDENTIALS_PATH = os.getenv('GOOGLE_CALENDAR_CREDENTIALS_PATH', '')
