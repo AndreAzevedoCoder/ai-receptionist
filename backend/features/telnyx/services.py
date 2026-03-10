@@ -292,6 +292,184 @@ class TelnyxService:
         return response.json().get("data", {})
 
     # =========================================
+    # TeXML Application Management
+    # =========================================
+
+    def create_texml_application(
+        self,
+        name: str,
+        webhook_url: str,
+        outbound_voice_profile_id: str = None,
+    ) -> dict:
+        """
+        Create a TeXML Application.
+
+        Args:
+            name: Application name
+            webhook_url: URL where TeXML webhooks will be sent
+            outbound_voice_profile_id: Optional outbound voice profile
+
+        Returns:
+            Created TeXML application details
+        """
+        payload = {
+            "friendly_name": name,
+            "voice_url": webhook_url,
+            "voice_fallback_url": webhook_url,
+            "voice_method": "POST",
+        }
+
+        if outbound_voice_profile_id:
+            payload["outbound_voice_profile_id"] = outbound_voice_profile_id
+
+        response = requests.post(
+            f"{self.BASE_URL}/texml_applications",
+            headers=self._headers(),
+            json=payload,
+        )
+        if not response.ok:
+            logger.error(f"TeXML Application creation failed: {response.status_code} - {response.text}")
+        response.raise_for_status()
+        result = response.json()
+        logger.info(f"TeXML Application creation response: {result}")
+        return result.get("data", result)
+
+    def get_texml_application(self, texml_app_id: str) -> dict:
+        """
+        Get TeXML Application details.
+
+        Args:
+            texml_app_id: The TeXML application ID
+
+        Returns:
+            TeXML application details
+        """
+        response = requests.get(
+            f"{self.BASE_URL}/texml_applications/{texml_app_id}",
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json().get("data", {})
+
+    def list_texml_applications(self) -> list:
+        """
+        List all TeXML Applications.
+
+        Returns:
+            List of TeXML applications
+        """
+        response = requests.get(
+            f"{self.BASE_URL}/texml_applications",
+            headers=self._headers(),
+        )
+        response.raise_for_status()
+        return response.json().get("data", [])
+
+    # =========================================
+    # Phone Number Assignment
+    # =========================================
+
+    def get_phone_number_by_number(self, phone_number: str) -> Optional[dict]:
+        """
+        Get phone number details by the phone number string.
+
+        Args:
+            phone_number: The phone number in E.164 format (e.g., +17435004191)
+
+        Returns:
+            Phone number details or None if not found
+        """
+        response = requests.get(
+            f"{self.BASE_URL}/phone_numbers",
+            headers=self._headers(),
+            params={"filter[phone_number]": phone_number},
+        )
+        response.raise_for_status()
+        data = response.json().get("data", [])
+        return data[0] if data else None
+
+    def assign_phone_number_to_texml_app(
+        self,
+        phone_number: str,
+        texml_app_id: str,
+    ) -> dict:
+        """
+        Assign a phone number to a TeXML Application.
+
+        Args:
+            phone_number: The phone number in E.164 format
+            texml_app_id: The TeXML application ID
+
+        Returns:
+            Updated phone number details
+        """
+        # First, get the phone number ID
+        phone_data = self.get_phone_number_by_number(phone_number)
+        if not phone_data:
+            raise ValueError(f"Phone number {phone_number} not found in Telnyx account")
+
+        phone_number_id = phone_data.get("id")
+
+        # Update the phone number's connection to use the TeXML app
+        payload = {
+            "connection_id": texml_app_id,
+        }
+
+        response = requests.patch(
+            f"{self.BASE_URL}/phone_numbers/{phone_number_id}",
+            headers=self._headers(),
+            json=payload,
+        )
+        if not response.ok:
+            logger.error(f"Phone number assignment failed: {response.status_code} - {response.text}")
+        response.raise_for_status()
+        result = response.json()
+        logger.info(f"Phone number {phone_number} assigned to TeXML app {texml_app_id}")
+        return result.get("data", result)
+
+    def provision_phone_for_ai_assistant(
+        self,
+        phone_number: str,
+        assistant_id: str,
+        assistant_name: str,
+        webhook_url: str = None,
+    ) -> dict:
+        """
+        Provision a phone number to work with an AI Assistant.
+
+        This creates a TeXML application that routes calls to the AI Assistant
+        and assigns the phone number to that application.
+
+        Args:
+            phone_number: The phone number in E.164 format
+            assistant_id: The Telnyx AI Assistant ID
+            assistant_name: Name for the TeXML application
+            webhook_url: Optional webhook URL for call events
+
+        Returns:
+            Dict with texml_app_id and phone_number_id
+        """
+        # Create a TeXML application for this assistant
+        # The TeXML app will route incoming calls to the AI assistant
+        texml_webhook_url = webhook_url or f"https://api.telnyx.com/v2/ai/assistants/{assistant_id}/calls"
+
+        texml_app = self.create_texml_application(
+            name=f"AI Assistant - {assistant_name}",
+            webhook_url=texml_webhook_url,
+        )
+        texml_app_id = texml_app.get("id")
+
+        # Assign the phone number to the TeXML application
+        phone_result = self.assign_phone_number_to_texml_app(phone_number, texml_app_id)
+
+        return {
+            "texml_app_id": texml_app_id,
+            "phone_number_id": phone_result.get("id"),
+            "phone_number": phone_number,
+            "assistant_id": assistant_id,
+        }
+
+    # =========================================
     # Call Control
     # =========================================
 

@@ -70,6 +70,55 @@ def update_telnyx_assistant(agent):
         return False
 
 
+def assign_phone_number_to_agent(agent, phone_number: str):
+    """
+    Assign a phone number to an agent and configure it on Telnyx.
+
+    This will:
+    1. Create a TeXML application if needed
+    2. Assign the phone number to the TeXML app
+    3. Update the agent with the phone number and TeXML app ID
+
+    Args:
+        agent: The Agent instance
+        phone_number: Phone number in E.164 format (e.g., +17435004191)
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if not agent.telnyx_assistant_id:
+        logger.error(f"Cannot assign phone to agent {agent.id}: No Telnyx assistant")
+        return False
+
+    try:
+        telnyx = TelnyxService()
+        webhook_url = getattr(settings, 'BASE_WEBHOOK_URL', None)
+        if webhook_url:
+            webhook_url = f"{webhook_url}/api/telnyx/webhook/"
+
+        result = telnyx.provision_phone_for_ai_assistant(
+            phone_number=phone_number,
+            assistant_id=agent.telnyx_assistant_id,
+            assistant_name=f"{agent.assistant_name} - {agent.tenant.name}",
+            webhook_url=webhook_url,
+        )
+
+        # Update agent with provisioning details
+        agent.telnyx_phone_number = phone_number
+        agent.telnyx_connection_id = result.get('texml_app_id', '')
+        agent.telnyx_phone_id = result.get('phone_number_id', '')
+        agent.save()
+
+        logger.info(f"Assigned phone {phone_number} to agent {agent.id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to assign phone to agent {agent.id}: {e}")
+        agent.provisioning_error = str(e)
+        agent.save()
+        return False
+
+
 def get_or_create_agent(tenant):
     """Get existing agent or create a default one with Telnyx assistant."""
     agent = Agent.objects.filter(tenant=tenant).first()
