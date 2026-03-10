@@ -21,7 +21,14 @@ class CallLog(models.Model):
         'tenants.Tenant',
         on_delete=models.CASCADE,
         related_name='call_logs',
-        null=True,  # Allow null for migration, will be required later
+        null=True,
+        blank=True,
+    )
+    agent = models.ForeignKey(
+        'agents.Agent',
+        on_delete=models.CASCADE,
+        related_name='call_logs',
+        null=True,
         blank=True,
     )
     call_sid = models.CharField(max_length=64, unique=True, db_index=True)

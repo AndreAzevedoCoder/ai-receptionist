@@ -49,7 +49,10 @@ INSTALLED_APPS = [
     'corsheaders',
     # Feature apps
     'backend.features.tenants',
+    'backend.features.agents',
+    'backend.features.telnyx',
     'backend.features.billing',
+    'backend.features.credits',
     'backend.features.leads',
     'backend.features.calls',
     'backend.features.calendar',
@@ -208,20 +211,24 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 
-# Twilio Settings
-TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID', '')
-TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN', '')
-TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER', '')
-FORWARD_PHONE_NUMBER = os.getenv('FORWARD_PHONE_NUMBER', '')
+# Telnyx Settings (Primary)
+# API key and public key are account-level credentials
+# Connection IDs are per-agent (stored in Agent model)
+TELNYX_API_KEY = os.getenv('TELNYX_API_KEY', '')
+TELNYX_PUBLIC_KEY = os.getenv('TELNYX_PUBLIC_KEY', '')
+TELNYX_DEFAULT_SYSTEM_PROMPT = os.getenv(
+    'TELNYX_DEFAULT_SYSTEM_PROMPT',
+    '''You are a professional AI receptionist for a real estate company.
 
-# Vapi.ai Settings
-VAPI_API_KEY = os.getenv('VAPI_API_KEY', '')
-VAPI_ASSISTANT_PHONE_NUMBER = os.getenv('VAPI_ASSISTANT_PHONE_NUMBER', '')
-VAPI_WEBHOOK_SECRET = os.getenv('VAPI_WEBHOOK_SECRET', '')
-VAPI_DEFAULT_SYSTEM_PROMPT = os.getenv(
-    'VAPI_DEFAULT_SYSTEM_PROMPT',
-    'You are a helpful AI receptionist. Greet the caller, ask how you can help, '
-    'and collect their name and reason for calling. Be friendly and professional.'
+Your responsibilities:
+1. Greet callers warmly and professionally
+2. Ask how you can help them today
+3. Collect their name and contact information
+4. Understand their real estate needs (buying, selling, renting)
+5. Take notes about their requirements
+6. Offer to schedule a callback or showing
+
+Be friendly, helpful, and professional. Keep responses concise for phone conversations.'''
 )
 
 # Stripe Settings

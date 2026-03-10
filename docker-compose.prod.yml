@@ -1,4 +1,4 @@
-# Development docker-compose with hot reload
+# Production docker-compose with gunicorn
 services:
   db:
     image: postgres:16-alpine
@@ -14,8 +14,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    ports:
-      - "5432:5432"
 
   web:
     build: .
@@ -24,9 +22,9 @@ services:
       db:
         condition: service_healthy
     environment:
-      - DEBUG=True
+      - DEBUG=False
       - SECRET_KEY=${SECRET_KEY}
-      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS}
       - DATABASE_URL=postgres://${POSTGRES_USER:-reception}:${POSTGRES_PASSWORD:-reception}@db:5432/${POSTGRES_DB:-reception}
       - TELNYX_API_KEY=${TELNYX_API_KEY}
       - TELNYX_PUBLIC_KEY=${TELNYX_PUBLIC_KEY}
@@ -37,12 +35,12 @@ services:
       - GOOGLE_CALENDAR_CREDENTIALS_PATH=/app/credentials.json
       - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
     volumes:
-      - ./backend:/app/backend:ro
-      - ./manage.py:/app/manage.py:ro
       - ./credentials.json:/app/credentials.json:ro
     ports:
       - "8000:8000"
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "python manage.py migrate &&
+             gunicorn --bind 0.0.0.0:8000 --workers 2 backend.wsgi:application"
 
 volumes:
   postgres_data:

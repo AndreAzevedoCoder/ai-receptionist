@@ -13,9 +13,10 @@ urlpatterns = [
     # API routes
     path('api/auth/', include('backend.features.auth.urls')),
     path('api/tenants/', include('backend.features.tenants.urls')),
+    path('api/agents/', include('backend.features.agents.urls')),
     path('api/billing/', include('backend.features.billing.urls')),
-    path('api/twilio/', include('backend.features.twilio.urls')),
-    path('api/vapi/', include('backend.features.vapi.urls')),
+    path('api/credits/', include('backend.features.credits.urls')),
+    path('api/telnyx/', include('backend.features.telnyx.urls')),
     path('api/leads/', include('backend.features.leads.urls')),
     path('api/calls/', include('backend.features.calls.urls')),
     path('api/calendar/', include('backend.features.calendar.urls')),
