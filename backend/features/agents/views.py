@@ -23,21 +23,34 @@ def create_telnyx_assistant(agent):
     """Create a Telnyx AI Assistant for the agent."""
     try:
         telnyx = TelnyxService()
-        webhook_url = getattr(settings, 'BASE_WEBHOOK_URL', None)
-        if webhook_url:
-            webhook_url = f"{webhook_url}/api/telnyx/webhook/"
+        base_webhook_url = getattr(settings, 'BASE_WEBHOOK_URL', None)
 
+        webhook_url = None
+        if base_webhook_url:
+            webhook_url = f"{base_webhook_url}/api/telnyx/webhook/"
+
+        # Create assistant first (without tools, since we need the assistant_id for the tool)
         result = telnyx.create_ai_assistant(
             name=f"{agent.assistant_name} - {agent.tenant.name}",
             system_prompt=agent.system_prompt,
             greeting=agent.assistant_greeting,
             webhook_url=webhook_url,
+            tools=None,
         )
 
         # Save the assistant ID
         agent.telnyx_assistant_id = result.get('id', '')
         agent.status = 'active' if agent.telnyx_assistant_id else 'pending'
         agent.save()
+
+        # Now add tools with the assistant_id
+        if base_webhook_url and agent.telnyx_assistant_id:
+            save_answer_url = f"{base_webhook_url}/api/telnyx/save-answer/"
+            tools = [TelnyxService.build_save_answer_tool(save_answer_url, agent.telnyx_assistant_id)]
+            telnyx.update_ai_assistant(
+                assistant_id=agent.telnyx_assistant_id,
+                tools=tools,
+            )
 
         logger.info(f"Created Telnyx assistant {agent.telnyx_assistant_id} for agent {agent.id}")
         return True
@@ -51,16 +64,24 @@ def create_telnyx_assistant(agent):
 
 
 def update_telnyx_assistant(agent):
-    """Update the Telnyx AI Assistant's prompt."""
+    """Update the Telnyx AI Assistant's prompt and tools."""
     if not agent.telnyx_assistant_id:
         # No assistant yet, create one
         return create_telnyx_assistant(agent)
 
     try:
         telnyx = TelnyxService()
+        base_webhook_url = getattr(settings, 'BASE_WEBHOOK_URL', None)
+
+        tools = None
+        if base_webhook_url:
+            save_answer_url = f"{base_webhook_url}/api/telnyx/save-answer/"
+            tools = [TelnyxService.build_save_answer_tool(save_answer_url, agent.telnyx_assistant_id)]
+
         telnyx.update_ai_assistant(
             assistant_id=agent.telnyx_assistant_id,
             system_prompt=agent.system_prompt,
+            tools=tools,
         )
         logger.info(f"Updated Telnyx assistant {agent.telnyx_assistant_id} for agent {agent.id}")
         return True

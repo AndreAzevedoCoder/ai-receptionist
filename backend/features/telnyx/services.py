@@ -179,6 +179,7 @@ class TelnyxService:
         voice: str = "Telnyx/nova",
         model: str = "Qwen/Qwen3-235B-A22B",
         webhook_url: str = None,
+        tools: list = None,
     ) -> dict:
         """
         Create a Telnyx AI Assistant.
@@ -190,6 +191,7 @@ class TelnyxService:
             voice: TTS voice to use (format: provider/voice_id)
             model: LLM model to use (format: provider/model_id)
             webhook_url: URL for conversation end webhooks
+            tools: List of tool configurations (webhook, handoff, etc.)
 
         Returns:
             Created assistant details
@@ -206,6 +208,9 @@ class TelnyxService:
 
         if webhook_url:
             payload["dynamic_variables_webhook_url"] = webhook_url
+
+        if tools:
+            payload["tools"] = tools
 
         response = requests.post(
             f"{self.BASE_URL}/ai/assistants",
@@ -226,6 +231,7 @@ class TelnyxService:
         system_prompt: str = None,
         greeting: str = None,
         webhook_url: str = None,
+        tools: list = None,
     ) -> dict:
         """
         Update an existing AI Assistant.
@@ -236,6 +242,7 @@ class TelnyxService:
             system_prompt: New system instructions (optional)
             greeting: New greeting (optional)
             webhook_url: New webhook URL (optional)
+            tools: List of tool configurations (optional)
 
         Returns:
             Updated assistant details
@@ -249,6 +256,8 @@ class TelnyxService:
             payload["greeting"] = greeting
         if webhook_url:
             payload["dynamic_variables_webhook_url"] = webhook_url
+        if tools is not None:
+            payload["tools"] = tools
 
         response = requests.patch(
             f"{self.BASE_URL}/ai/assistants/{assistant_id}",
@@ -257,6 +266,52 @@ class TelnyxService:
         )
         response.raise_for_status()
         return response.json().get("data", {})
+
+    @staticmethod
+    def build_save_answer_tool(webhook_url: str, assistant_id: str) -> dict:
+        """
+        Build a webhook tool configuration for saving caller answers.
+
+        The AI will call this webhook after collecting each piece of information.
+
+        Args:
+            webhook_url: The URL to POST answers to
+            assistant_id: The Telnyx assistant ID (used to identify the tenant)
+
+        Returns:
+            Tool configuration dict
+        """
+        return {
+            "type": "webhook",
+            "webhook": {
+                "name": "save_caller_answer",
+                "description": f"Save information collected from the caller. Call this immediately after the caller provides an answer to any question. Always include assistant_id: {assistant_id}",
+                "url": webhook_url,
+                "method": "POST",
+                "body_parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question_type": {
+                            "type": "string",
+                            "description": "The type of question answered: budget, credit_score, location, move_in_date, num_people, name, email, phone, or custom"
+                        },
+                        "answer": {
+                            "type": "string",
+                            "description": "The caller's answer to the question"
+                        },
+                        "caller_phone": {
+                            "type": "string",
+                            "description": "The caller's phone number"
+                        },
+                        "assistant_id": {
+                            "type": "string",
+                            "description": f"The assistant ID. Always use: {assistant_id}"
+                        }
+                    },
+                    "required": ["question_type", "answer", "assistant_id"]
+                }
+            }
+        }
 
     def delete_ai_assistant(self, assistant_id: str) -> bool:
         """
@@ -496,7 +551,7 @@ class TelnyxService:
         response.raise_for_status()
         return response.json().get("data", {})
 
-    def bridge_call(
+    def transfer_call(
         self,
         call_control_id: str,
         to_number: str,
@@ -505,14 +560,16 @@ class TelnyxService:
         webhook_url: str = None,
     ) -> dict:
         """
-        Bridge the call to another number (ring human).
+        Transfer the call to another number (ring human).
+
+        Uses the 'transfer' action which dials another party and connects them.
 
         Args:
             call_control_id: The call control ID
-            to_number: Number to bridge to
-            from_number: Caller ID
-            timeout_secs: Timeout before giving up
-            webhook_url: Webhook for bridge events
+            to_number: Number to transfer to
+            from_number: Caller ID to show
+            timeout_secs: Ring timeout before giving up
+            webhook_url: Webhook for call events
 
         Returns:
             Response data
@@ -526,7 +583,7 @@ class TelnyxService:
             payload["webhook_url"] = webhook_url
 
         response = requests.post(
-            f"{self.BASE_URL}/calls/{call_control_id}/actions/bridge",
+            f"{self.BASE_URL}/calls/{call_control_id}/actions/transfer",
             headers=self._headers(),
             json=payload,
         )
@@ -537,27 +594,37 @@ class TelnyxService:
         self,
         call_control_id: str,
         assistant_id: str,
+        greeting: str = None,
         webhook_url: str = None,
     ) -> dict:
         """
-        Transfer the call to an AI Assistant.
+        Start an AI Assistant conversation on an existing call.
+
+        Uses POST /calls/{call_control_id}/actions/ai_assistant_start
 
         Args:
-            call_control_id: The call control ID
+            call_control_id: The call control ID of the active call
             assistant_id: The AI Assistant ID
+            greeting: Optional greeting for the AI to speak first
             webhook_url: Webhook for AI events
 
         Returns:
             Response data
         """
         payload = {
-            "assistant_id": assistant_id,
+            "assistant": {
+                "id": assistant_id,
+            },
         }
+        if greeting:
+            payload["greeting"] = greeting
         if webhook_url:
             payload["webhook_url"] = webhook_url
 
+        logger.info(f"AI assistant start payload: {payload}")
+
         response = requests.post(
-            f"{self.BASE_URL}/calls/{call_control_id}/actions/ai_assistant",
+            f"{self.BASE_URL}/calls/{call_control_id}/actions/ai_assistant_start",
             headers=self._headers(),
             json=payload,
         )

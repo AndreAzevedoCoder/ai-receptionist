@@ -10,6 +10,15 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # tenant_id already exists in database, marking as no-op
-        # This migration is needed for dependency tracking
+        migrations.AddField(
+            model_name='lead',
+            name='tenant',
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name='leads',
+                to='tenants.tenant',
+            ),
+        ),
     ]

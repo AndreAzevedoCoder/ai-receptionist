@@ -1,4 +1,5 @@
-from django.db import migrations
+import django.db.models.deletion
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
@@ -10,6 +11,26 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        # Both tenant_id and agent_id already exist in database
-        # This migration is needed for dependency tracking only
+        migrations.AddField(
+            model_name='calllog',
+            name='tenant',
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name='call_logs',
+                to='tenants.tenant',
+            ),
+        ),
+        migrations.AddField(
+            model_name='calllog',
+            name='agent',
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.CASCADE,
+                related_name='call_logs',
+                to='agents.agent',
+            ),
+        ),
     ]

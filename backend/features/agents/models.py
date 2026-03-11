@@ -38,7 +38,7 @@ class Agent(models.Model):
     company_name = models.CharField(max_length=255, blank=True, help_text='Company name for AI greeting')
 
     # Telnyx Configuration
-    telnyx_phone_number = models.CharField(max_length=20, blank=True, db_index=True)
+    telnyx_phone_number = models.CharField(max_length=20, blank=True, null=True, unique=True)
     telnyx_phone_id = models.CharField(max_length=100, blank=True)
     telnyx_assistant_id = models.CharField(max_length=100, blank=True)
     telnyx_connection_id = models.CharField(max_length=100, blank=True)
@@ -116,7 +116,6 @@ class Agent(models.Model):
             return self.system_prompt
 
         questions_text = '\n'.join(f'- {q}' for q in questions_list)
-        notification_email = self.tenant.notification_email or self.tenant.owner.email
 
         return f"""You are Alven, a professional AI receptionist.
 
@@ -125,9 +124,9 @@ When speaking with callers, collect the following information:
 
 Be friendly, professional, and conversational. Don't ask all questions at once - have a natural conversation.
 
-After collecting the information, let the caller know that someone will follow up with them soon.
+IMPORTANT: After the caller answers each question, immediately use the save_caller_answer tool to save their response. Include the question_type (budget, credit_score, location, move_in_date, num_people, name, email, phone, or custom) and the caller's answer.
 
-Send collected information to: {notification_email}"""
+After collecting all the information, let the caller know that someone will follow up with them soon."""
 
 
 class Question(models.Model):
