@@ -36,6 +36,12 @@ class CallLog(models.Model):
     to_number = models.CharField(max_length=20)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='incoming')
     duration = models.IntegerField(default=0, help_text='Call duration in seconds')
+    credits_spent = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        help_text='Credits spent for this call'
+    )
     lead = models.ForeignKey(
         'leads.Lead',
         on_delete=models.SET_NULL,

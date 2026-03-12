@@ -435,7 +435,9 @@ class TelnyxWebhookView(APIView):
             # Link to call log
             if call_log:
                 call_log.lead = lead
-                call_log.status = "completed"
+                # Keep "vapi" status for AI handled calls - don't overwrite to "completed"
+                if call_log.status != "vapi":
+                    call_log.status = "completed"
                 call_log.duration = duration
                 call_log.save()
 
@@ -448,10 +450,15 @@ class TelnyxWebhookView(APIView):
                     phone_number=from_number,
                     call_log=call_log,
                 )
+                credits_used = abs(credit_transaction.amount)
                 logger.info(
-                    f"Deducted {abs(credit_transaction.amount)} credits "
+                    f"Deducted {credits_used} credits "
                     f"for {duration}s AI call"
                 )
+                # Save credits spent to call log
+                if call_log:
+                    call_log.credits_spent = credits_used
+                    call_log.save()
             except Exception as e:
                 logger.error(f"Failed to deduct credits: {e}")
 
@@ -528,14 +535,26 @@ class TelnyxSaveAnswerView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Try to find tenant from assistant_id
+        # Try to find tenant and agent from assistant_id
         tenant = None
+        agent = None
         if assistant_id:
             try:
                 agent = Agent.objects.get(telnyx_assistant_id=assistant_id)
                 tenant = agent.tenant
             except Agent.DoesNotExist:
                 pass
+
+        # If caller_phone is missing or looks invalid, try to get it from recent call
+        if (not caller_phone or len(caller_phone) < 10) and agent:
+            # Look up the most recent call for this agent
+            recent_call = CallLog.objects.filter(
+                agent=agent,
+                status='vapi'
+            ).order_by('-created_at').first()
+            if recent_call and recent_call.from_number:
+                caller_phone = recent_call.from_number
+                logger.info(f"Got caller phone from recent call: {caller_phone}")
 
         # Find or create lead by phone number
         lead = None

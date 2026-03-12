@@ -15,6 +15,7 @@ class CallLogSerializer(serializers.ModelSerializer):
             'to_number',
             'status',
             'duration',
+            'credits_spent',
             'lead',
             'lead_name',
             'created_at',

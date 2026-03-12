@@ -157,6 +157,9 @@ export default function CallsPage() {
                         Duration
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Credits
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Lead
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -214,6 +217,15 @@ export default function CallsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {formatDuration(call.duration)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {parseFloat(call.credits_spent) > 0 ? (
+                            <span className="text-amber-600 font-medium">
+                              {parseFloat(call.credits_spent).toFixed(2)}
+                            </span>
+                          ) : (
+                            "-"
+                          )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {call.lead ? (

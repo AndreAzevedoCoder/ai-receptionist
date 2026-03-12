@@ -94,8 +94,6 @@ class Agent(models.Model):
     def build_system_prompt(self):
         """Build system prompt from questions."""
         questions = self.questions.all().order_by('order')
-        if not questions.exists():
-            return self.system_prompt
 
         question_labels = {
             'budget': 'Budget',
@@ -105,26 +103,31 @@ class Agent(models.Model):
             'num_people': 'Number of People',
         }
 
-        questions_list = []
+        # Always start with name - it's required
+        questions_list = ["Their name (REQUIRED - always ask this first)"]
+
         for q in questions:
             if q.question_type == 'custom':
                 questions_list.append(q.custom_text)
             else:
                 questions_list.append(question_labels.get(q.question_type, q.question_type))
 
-        if not questions_list:
-            return self.system_prompt
-
         questions_text = '\n'.join(f'- {q}' for q in questions_list)
 
-        return f"""You are Alven, a professional AI receptionist.
+        company_intro = ""
+        if self.company_name:
+            company_intro = f" for {self.company_name}"
+
+        return f"""You are Alven, a professional AI receptionist{company_intro}.
 
 When speaking with callers, collect the following information:
 {questions_text}
 
 Be friendly, professional, and conversational. Don't ask all questions at once - have a natural conversation.
 
-IMPORTANT: After the caller answers each question, immediately use the save_caller_answer tool to save their response. Include the question_type (budget, credit_score, location, move_in_date, num_people, name, email, phone, or custom) and the caller's answer.
+IMPORTANT:
+1. ALWAYS ask for the caller's name first. This is required and cannot be skipped.
+2. After the caller answers each question, immediately use the save_caller_answer tool to save their response. Include the question_type (budget, credit_score, location, move_in_date, num_people, name, email, phone, or custom) and the caller's answer.
 
 After collecting all the information, let the caller know that someone will follow up with them soon."""
 

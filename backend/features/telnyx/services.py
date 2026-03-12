@@ -176,19 +176,19 @@ class TelnyxService:
         name: str,
         system_prompt: str,
         greeting: str,
-        voice: str = "Telnyx/nova",
+        voice: str = "Minimax.speech-2.6-turbo.English_Upbeat_Woman",
         model: str = "Qwen/Qwen3-235B-A22B",
         webhook_url: str = None,
         tools: list = None,
     ) -> dict:
         """
-        Create a Telnyx AI Assistant.
+        Create a Telnyx AI Assistant with telephony enabled.
 
         Args:
             name: Assistant name
             system_prompt: System instructions
             greeting: Initial greeting message
-            voice: TTS voice to use (format: provider/voice_id)
+            voice: TTS voice to use (format: provider.model.voice_id)
             model: LLM model to use (format: provider/model_id)
             webhook_url: URL for conversation end webhooks
             tools: List of tool configurations (webhook, handoff, etc.)
@@ -201,8 +201,30 @@ class TelnyxService:
             "instructions": system_prompt,
             "greeting": greeting,
             "model": model,
+            # Enable telephony for voice calls
+            "enabled_features": ["telephony"],
+            # Voice settings
             "voice_settings": {
                 "voice": voice,
+                "voice_speed": 1.0,
+                "language_boost": "auto",
+            },
+            # Transcription settings for speech-to-text
+            "transcription": {
+                "model": "deepgram/nova-3",
+                "language": "auto",
+            },
+            # Interruption settings for natural conversation
+            "interruption_settings": {
+                "enable": True,
+                "start_speaking_plan": {
+                    "wait_seconds": 0.1,
+                    "transcription_endpointing_plan": {
+                        "on_punctuation_seconds": 0.1,
+                        "on_no_punctuation_seconds": 0.1,
+                        "on_number_seconds": 0.1,
+                    },
+                },
             },
         }
 
@@ -714,8 +736,13 @@ class TelnyxWebhookProcessor:
         # Duration might be in different places depending on event
         data = payload.get("data", {}).get("payload", {})
 
-        # Try direct duration field
-        duration = data.get("duration_secs", 0)
+        # Try different duration field names (Telnyx uses both)
+        duration = data.get("duration_secs") or data.get("duration_sec") or 0
+
+        # For AI conversation events, duration might be in call_quality_stats
+        if not duration:
+            call_quality = data.get("call_quality_stats", {})
+            duration = call_quality.get("duration_secs") or call_quality.get("duration_sec") or 0
 
         if not duration:
             # Try calculating from timestamps
